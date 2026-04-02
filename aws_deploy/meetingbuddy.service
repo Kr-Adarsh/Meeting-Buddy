@@ -1,0 +1,25 @@
+[Unit]
+Description=Meeting Buddy FastAPI & Selenium Headless Daemon
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/MeetingBuddy
+
+# Set PulseAudio and X11 Display Virtual Pointers
+Environment="PATH=/home/ubuntu/MeetingBuddy/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="DISPLAY=:99"
+Environment="PULSE_SERVER=unix:/tmp/pulseaudio.socket"
+
+# Start PulseAudio daemon natively for the user
+ExecStartPre=/bin/bash -c "pulseaudio -D --exit-idle-time=-1 -n --load=module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulseaudio.socket || true"
+
+# Use Xvfb to construct Virtual Monitor and wrap the Python server!
+ExecStart=/usr/bin/xvfb-run -a -n 99 --server-args="-screen 0 1280x720x24" /home/ubuntu/MeetingBuddy/.venv/bin/python app.py
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

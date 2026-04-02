@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+recordings/
+*.wav
+debug_screenshots/
+*.pem
+firebase-credentials.json
+*.key
+.DS_Store
