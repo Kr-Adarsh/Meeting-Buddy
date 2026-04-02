@@ -241,8 +241,8 @@ async def health():
     return {"status": "ok", "active_bots": len(bots_db), "total_jobs": len(jobs_db)}
 
 
-# ── Run ─────────────────────────────────────
+# ── Run : Directly running on aws no need to below commands
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

@@ -60,7 +60,7 @@ sudo systemctl enable meetingbuddy.service
 sudo systemctl restart meetingbuddy.service
 
 echo "=========================================="
-echo "✅ DEPLOYMENT COMPLETE!"
+echo "DEPLOYMENT COMPLETE!"
 echo "The Selenium Bot is now live on this server's Public IPv4 Address hidden entirely behind Nginx HTTP Basic Auth!"
 echo "Check backend status with: sudo systemctl status meetingbuddy"
 echo "=========================================="
