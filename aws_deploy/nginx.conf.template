@@ -6,10 +6,7 @@ server {
     root /home/ubuntu/MeetingBuddy/frontend/dist;
     index index.html index.htm;
 
-    # Protect the entire domain natively via Basic Auth
-    auth_basic "Restricted Access - Meeting Buddy Admin Only";
-    auth_basic_user_file /etc/nginx/.htpasswd;
-
+    # Removed network-level Basic Auth directly in favor of Application-level Google OAuth
     # React DOM Router
     location / {
         try_files $uri /index.html;

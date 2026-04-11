@@ -52,9 +52,7 @@ class MeetBot:
         """Check if stop was requested. Call this frequently."""
         return self.stop_event.is_set()
 
-    # ──────────────────────────────────────────
     #  MAIN ENTRY POINT
-    # ──────────────────────────────────────────
 
     def run(self) -> dict:
         """Execute the full bot lifecycle. Returns a result dict."""
@@ -78,7 +76,7 @@ class MeetBot:
 
             # Check if we're already in the meeting (signed-in user auto-joins)
             if self._is_in_meeting():
-                self._log("✅ Already in meeting (signed-in user)")
+                self._log("Already in meeting (signed-in user)")
             else:
                 # Guest flow: enter name, turn off mic/cam, click join
                 self._enter_name()
@@ -122,9 +120,7 @@ class MeetBot:
         finally:
             self._cleanup()
 
-    # ──────────────────────────────────────────
     #  CHROME LIFECYCLE
-    # ──────────────────────────────────────────
 
     def _detect_chrome_version(self):
         """Detect installed Chrome major version to match ChromeDriver."""
@@ -218,9 +214,7 @@ class MeetBot:
         if "meet.google.com" not in url:
             raise Exception(f"Redirected away from Meet: {url}")
 
-    # ──────────────────────────────────────────
     #  MEETING JOIN FLOW
-    # ──────────────────────────────────────────
 
     def _dismiss_dialogs(self):
         js_code = """
@@ -319,7 +313,7 @@ class MeetBot:
 
             # Check if we've ALREADY joined (e.g. auto-join for signed-in users)
             if self._is_in_meeting():
-                self._log("✅ Already in meeting!")
+                self._log("Already in meeting!")
                 return
 
             # Try each selector
@@ -328,7 +322,7 @@ class MeetBot:
                     btn = self.driver.find_element(by, sel)
                     if btn.is_displayed() and btn.is_enabled():
                         btn.click()
-                        self._log(f"✅ Clicked join button")
+                        self._log(f"Clicked join button")
                         time.sleep(0.5)
                         return
                 except Exception:
@@ -358,7 +352,7 @@ class MeetBot:
                     return null;
                 """)
                 if result:
-                    self._log(f"✅ Joined via exact JS match: '{result}'")
+                    self._log(f"Joined via exact JS match: '{result}'")
                     time.sleep(0.5)
                     return
             except Exception as e:
@@ -376,7 +370,7 @@ class MeetBot:
 
         # Final check — maybe we DID join but didn't detect it
         if self._is_in_meeting():
-            self._log("✅ Already in meeting (detected after retries)")
+            self._log("Already in meeting (detected after retries)")
             return
 
         self._screenshot("join_FAILED")
@@ -385,7 +379,7 @@ class MeetBot:
     def _wait_for_admission(self, timeout=180):
         """Wait until admitted. Checks stop_event."""
         self._log(f"⏳ Waiting for admission ({timeout}s)...")
-        self._log("📢 Please admit 'Meeting Buddy' from your Meet window!")
+        self._log("Please admit 'Meeting Buddy' from your Meet window!")
         self._screenshot("03_waiting_admission")
 
         start = time.time()
@@ -393,7 +387,7 @@ class MeetBot:
             if self._should_stop():
                 raise Exception("Stopped by user while waiting for admission")
             if self._is_in_meeting():
-                self._log("✅ Admitted to meeting!")
+                self._log("Admitted to meeting!")
                 return
             time.sleep(1)
 
@@ -428,9 +422,7 @@ class MeetBot:
         except Exception:
             return False
 
-    # ──────────────────────────────────────────
     #  AUDIO RECORDING  (FFmpeg + PulseAudio)
-    # ──────────────────────────────────────────
 
     def _start_audio_recording(self):
         # Fallback to default if sink didn't create
@@ -459,9 +451,7 @@ class MeetBot:
             size_mb = os.path.getsize(self.audio_file) / (1024 * 1024)
             self._log(f"💾 Audio saved ({size_mb:.1f} MB)")
 
-    # ──────────────────────────────────────────
     #  CAPTIONS SCRAPING
-    # ──────────────────────────────────────────
 
     def _enable_captions(self):
         """Force captions on via Selenium explicitly."""
@@ -560,9 +550,7 @@ class MeetBot:
 
 
 
-    # ──────────────────────────────────────────
     #  MEETING MONITORING
-    # ──────────────────────────────────────────
 
     def _monitor_meeting(self):
         self._log("📍 Recording... (stop via UI or wait for meeting end)")
@@ -600,9 +588,7 @@ class MeetBot:
         except Exception:
             return True
 
-    # ──────────────────────────────────────────
     #  FINALIZE & CLEANUP
-    # ──────────────────────────────────────────
 
     def _finalize(self):
         self._stop_audio_recording()
@@ -699,10 +685,7 @@ class MeetBot:
         prefix = f"[BOT:{self.job_id}]"
         print(f"{prefix} {msg} {detail}".strip())
 
-
-# ──────────────────────────────────────────
-#  Standalone test
-# ──────────────────────────────────────────
+#  Standalone tes
 if __name__ == "__main__":
     import json
     url = input("Paste a Google Meet link: ").strip()

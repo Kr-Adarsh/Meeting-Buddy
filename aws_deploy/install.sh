@@ -4,8 +4,6 @@
 
 set -e
 
-echo "=== Meeting Buddy Cloud Deployment ==="
-
 # 1. SETUP 4GB MEMORY SWAP (Critical for t3.micro RAM limits)
 if [ ! -f /swapfile ]; then
     echo "[1/6] Allocating 4GB Swap Space..."
@@ -32,9 +30,7 @@ if ! command -v google-chrome &> /dev/null; then
 fi
 
 # 3. SET UP BASIC AUTHENTICATION
-echo "[3/6] Setting up Secure Nginx Access..."
-read -p "Enter a Username for Web Dashboard: " dash_user
-sudo htpasswd -c /etc/nginx/.htpasswd "$dash_user"
+echo "[3/6] Skipping Nginx Basic Auth (Now using Google OAuth)..."
 
 # 4. NGINX CONFIGURATION
 echo "[4/6] Linking Reverse Proxy Nginx Config..."
@@ -59,8 +55,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable meetingbuddy.service
 sudo systemctl restart meetingbuddy.service
 
-echo "=========================================="
 echo "DEPLOYMENT COMPLETE!"
 echo "The Selenium Bot is now live on this server's Public IPv4 Address hidden entirely behind Nginx HTTP Basic Auth!"
 echo "Check backend status with: sudo systemctl status meetingbuddy"
-echo "=========================================="

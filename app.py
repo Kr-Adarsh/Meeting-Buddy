@@ -3,7 +3,9 @@ Meeting Buddy — FastAPI Backend
 Minimal API for deploying, monitoring, and stopping the Meet bot.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Depends
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -13,11 +15,14 @@ import asyncio
 import uuid
 import json
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from meet_bot import MeetBot
 from summarizer import generate_meeting_summary
 
-# ── App ──────────────────────────────────────
+# ── App ────
 
 app = FastAPI(title="Meeting Buddy API")
 
@@ -29,13 +34,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── In-memory stores ────────────────────────
+# ── In-memory stores 
 
 jobs_db: Dict[str, dict] = {}
 bots_db: Dict[str, MeetBot] = {}
 
 
-# ── Models ──────────────────────────────────
+# ── Models 
 
 class MeetRequest(BaseModel):
     url: str
@@ -47,7 +52,7 @@ class JobResponse(BaseModel):
     message: str
 
 
-# ── Background worker ───────────────────────
+# ── Background worker 
 
 async def _run_bot_task(job_id: str, meet_url: str):
     """Runs the bot in a background thread."""
@@ -73,10 +78,38 @@ async def _run_bot_task(job_id: str, meet_url: str):
         bots_db.pop(job_id, None)
 
 
-# ── Endpoints ───────────────────────────────
+# ── Auth Dependency ──
+
+ALLOWED_EMAILS_STR = os.environ.get("ALLOWED_EMAILS", "")
+ALLOWED_EMAILS = [e.strip() for e in ALLOWED_EMAILS_STR.split(",") if e.strip()]
+
+def verify_token(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        print(f"!!! Missing Authorization Header. Received: {authorization}", flush=True)
+        raise HTTPException(status_code=401, detail="Unauthorized - Missing Bearer Token")
+    
+    token = authorization.split(" ")[1]
+    try:
+        # Pass the Google Client ID if available, otherwise just verify signature
+        client_id = os.environ.get("GOOGLE_CLIENT_ID")
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        email = idinfo.get("email")
+        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+            raise HTTPException(status_code=403, detail="Email not allowed to access this resource")
+        return email
+    except Exception as e:
+        import traceback
+        with open("oauth_error.log", "w") as f:
+            f.write("OAuth Validation Failed:\n")
+            f.write(f"Error: {str(e)}\n\n")
+            f.write(traceback.format_exc())
+            f.write(f"\nToken len: {len(token)}\n")
+        raise HTTPException(status_code=401, detail="Invalid Google OAuth token")
+
+# ── Endpoints ───────
 
 @app.post("/deploy-bot", response_model=JobResponse)
-async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks):
+async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, user_email: str = Depends(verify_token)):
     """Start the bot for a given Google Meet URL."""
     if "meet.google.com" not in request.url:
         raise HTTPException(status_code=400, detail="Invalid Google Meet URL")
@@ -107,7 +140,7 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks):
 
 
 @app.get("/job-status/{job_id}")
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str, user_email: str = Depends(verify_token)):
     """Get current job status. Includes live captions if bot is active."""
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -125,7 +158,7 @@ async def get_job_status(job_id: str):
 
 
 @app.get("/jobs")
-async def get_all_jobs():
+async def get_all_jobs(user_email: str = Depends(verify_token)):
     """Get all historical and active jobs."""
     all_jobs = []
     
@@ -192,7 +225,7 @@ async def get_all_jobs():
 
 
 @app.post("/stop-bot/{job_id}")
-async def stop_bot(job_id: str):
+async def stop_bot(job_id: str, user_email: str = Depends(verify_token)):
     """Send stop signal to an active bot."""
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -206,7 +239,7 @@ async def stop_bot(job_id: str):
 
 
 @app.post("/summarize/{job_id}")
-async def summarize_bot(job_id: str, background_tasks: BackgroundTasks):
+async def summarize_bot(job_id: str, background_tasks: BackgroundTasks, user_email: str = Depends(verify_token)):
     """Trigger the LLM 3-stage summarizer in the background."""
     rec_dir = os.path.join("recordings", job_id)
     if not os.path.exists(rec_dir):
@@ -223,7 +256,7 @@ async def summarize_bot(job_id: str, background_tasks: BackgroundTasks):
 
 
 @app.get("/download/{job_id}/{file_type}")
-async def download_file(job_id: str, file_type: str):
+async def download_file(job_id: str, file_type: str, user_email: str = Depends(verify_token)):
     """Download audio, captions, or summary file."""
     allowed = {"audio": "audio.wav", "captions": "captions.txt", "summary": "summary.md"}
     if file_type not in allowed:
@@ -241,8 +274,7 @@ async def health():
     return {"status": "ok", "active_bots": len(bots_db), "total_jobs": len(jobs_db)}
 
 
-# ── Run : Directly running on aws no need to below commands
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

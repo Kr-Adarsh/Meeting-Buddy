@@ -1,13 +1,38 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Play, Loader2, Download, Clock, Mic, Square,
-  AlertCircle, MessageSquare, Bot, CheckCircle2, RotateCcw, X, Eye
+  AlertCircle, MessageSquare, Bot, CheckCircle2, RotateCcw, X, Eye, LogOut
 } from 'lucide-react';
 import './App.css';
+import Login from './Login';
 
-const API_URL = "http://18.220.20.49:8000";
+const API_URL = "http://localhost:8000";
 
 function App() {
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('mb_token'));
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('mb_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const handleLogOut = () => {
+    localStorage.removeItem('mb_token');
+    localStorage.removeItem('mb_user');
+    setAuthToken(null);
+    setUser(null);
+  };
+
+  const authFetch = async (endpoint, options = {}) => {
+    const activeToken = localStorage.getItem('mb_token');
+    const headers = { ...options.headers };
+    if (activeToken) headers['Authorization'] = `Bearer ${activeToken}`;
+    const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
+    if (res.status === 401 || res.status === 403) {
+      handleLogOut();
+      throw new Error("Session expired or unauthorized. Please log in again.");
+    }
+    return res;
+  };
   const [meetLink, setMeetLink] = useState('');
   const [error, setError] = useState(null);
 
@@ -37,7 +62,7 @@ function App() {
   useEffect(() => {
     const fetchJobs = async () => {
       try {
-        const res = await fetch(`${API_URL}/jobs`);
+        const res = await authFetch(`/jobs`);
         if (res.ok) {
           let data = await res.json();
 
@@ -83,12 +108,12 @@ function App() {
     if (peekJobId && isLive) {
       const getPeekStatus = async () => {
         try {
-          const sr = await fetch(`${API_URL}/job-status/${peekJobId}`);
+          const sr = await authFetch(`/job-status/${peekJobId}`);
           if (!sr.ok) return;
           const sdata = await sr.json();
           if (sdata.status === 'completed') {
             // It finished while we were peeking! Need to fetch final static captions.
-            const fr = await fetch(`${API_URL}/download/${peekJobId}/captions`);
+            const fr = await authFetch(`/download/${peekJobId}/captions`);
             if (fr.ok) {
               const staticText = await fr.text();
               const lines = staticText.split('\n').filter(l => l.trim().length > 0);
@@ -102,7 +127,7 @@ function App() {
               setPeekCaptions(formatted);
             }
           } else {
-            setPeekCaptions(sdata.captions || []);
+            setPeekCaptions(sdata.live_captions || []);
           }
         } catch (e) {
           console.error(e);
@@ -132,7 +157,7 @@ function App() {
     setLoadingDeploy(true);
 
     try {
-      const res = await fetch(`${API_URL}/deploy-bot`, {
+      const res = await authFetch(`/deploy-bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: meetLink.trim() }),
@@ -154,7 +179,7 @@ function App() {
   const handleSummarize = async (jobId) => {
     setIsSummarizing(prev => ({ ...prev, [jobId]: true }));
     try {
-      await fetch(`${API_URL}/summarize/${jobId}`, { method: 'POST' });
+      await authFetch(`/summarize/${jobId}`, { method: 'POST' });
     } catch (e) {
       console.error('Summarize error:', e);
       setIsSummarizing(prev => ({ ...prev, [jobId]: false }));
@@ -165,15 +190,29 @@ function App() {
   const handleStop = async (jobId) => {
     try {
       if (peekJobId === jobId) setPeekJobId(null); // Auto-collapse peek
-      await fetch(`${API_URL}/stop-bot/${jobId}`, { method: 'POST' });
+      await authFetch(`/stop-bot/${jobId}`, { method: 'POST' });
     } catch (e) {
       console.error('Stop error:', e);
     }
   };
 
   // ── Download ────────────────────────────
-  const download = (jobId, type) => {
-    window.open(`${API_URL}/download/${jobId}/${type}`, '_blank');
+  const download = async (jobId, type) => {
+    try {
+      const res = await authFetch(`/download/${jobId}/${type}`);
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `MeetingBuddy_${jobId}_${type}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch(err) {
+      console.error(err);
+    }
   };
 
   const fmt = (s) => {
@@ -224,7 +263,7 @@ function App() {
       if (job.status === 'completed' && job.has_captions) {
         // Fetch static file if completed
         try {
-          const res = await fetch(`${API_URL}/download/${job.job_id}/captions`);
+          const res = await authFetch(`/download/${job.job_id}/captions`);
           if (res.ok) {
             const text = await res.text();
             const lines = text.split('\\n').filter(l => l.trim().length > 0).map(line => {
@@ -241,10 +280,14 @@ function App() {
     }
   };
 
+  if (!authToken) {
+    return <Login setAuthToken={setAuthToken} setUser={setUser} />;
+  }
+
   return (
     <div className="app-container">
       {/* Header */}
-      <header className="header">
+      <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="logo-section">
           <div className="logo-icon"><Bot size={26} /></div>
           <div>
@@ -252,6 +295,19 @@ function App() {
             <p className="subtitle">Record & capture your Google Meet sessions</p>
           </div>
         </div>
+        
+        {user && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text)' }}>{user.name}</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{user.email}</span>
+            </div>
+            {user.picture && <img src={user.picture} alt="Avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)' }} />}
+            <button onClick={handleLogOut} className="header-icon-btn" title="Log Out" style={{ marginLeft: '8px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <LogOut size={20} />
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="main-content">
