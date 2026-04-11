@@ -15,9 +15,27 @@ import asyncio
 import uuid
 import json
 import os
+import sqlite3
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Database Init ──
+DB_PATH = "database.db"
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS meetings (
+                job_id TEXT PRIMARY KEY,
+                user_email TEXT,
+                url TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+
+init_db()
 
 from meet_bot import MeetBot
 from summarizer import generate_meeting_summary
@@ -130,7 +148,15 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, us
         "url": request.url,
         "result": None,
         "error": None,
+        "user_email": user_email
     }
+    
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO meetings (job_id, user_email, url) VALUES (?, ?, ?)",
+            (job_id, user_email, request.url)
+        )
+        conn.commit()
 
     background_tasks.add_task(_run_bot_task, job_id, request.url)
 
@@ -139,11 +165,23 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, us
     )
 
 
+def check_ownership(job_id: str, user_email: str):
+    """Enforce strict multi-tenant tenant isolation for existing database rows."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT user_email FROM meetings WHERE job_id = ?", (job_id,))
+        row = cur.fetchone()
+        if not row or row["user_email"] != user_email:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this meeting record")
+
 @app.get("/job-status/{job_id}")
 async def get_job_status(job_id: str, user_email: str = Depends(verify_token)):
     """Get current job status. Includes live captions if bot is active."""
+    check_ownership(job_id, user_email)
+    
     if job_id not in jobs_db:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="Job not found in memory")
 
     job = dict(jobs_db[job_id])
 
@@ -159,74 +197,73 @@ async def get_job_status(job_id: str, user_email: str = Depends(verify_token)):
 
 @app.get("/jobs")
 async def get_all_jobs(user_email: str = Depends(verify_token)):
-    """Get all historical and active jobs."""
-    all_jobs = []
-    
-    # 1. Fetch from running DB
-    for jid, job in jobs_db.items():
-        job_copy = dict(job)
-        bot = bots_db.get(jid)
-        if bot:
-            job_copy["status"] = bot.status
-            job_copy["captions_count"] = len(bot.captions) if hasattr(bot, 'captions') else 0
-        else:
-            # Bot concluded but FastAPI hasn't refreshed memory. Reconstruct keys from result.
-            res = job.get("result", {})
-            if res:
-                job_copy["duration_seconds"] = res.get("duration_seconds", 0)
-                job_copy["has_audio"] = bool(res.get("audio_file"))
-                job_copy["has_captions"] = bool(res.get("captions_file"))
-                job_copy["captions_count"] = res.get("captions_count", 0)
-                job_copy["has_summary"] = os.path.exists(os.path.join("recordings", jid, "summary.md"))
-            else:
-                # If bot failed catastrophically early, probe native folder as ultimate fallback
-                rec_dir = os.path.join("recordings", jid)
-                job_copy["duration_seconds"] = 0
-                job_copy["has_audio"] = os.path.exists(os.path.join(rec_dir, "audio.wav"))
-                job_copy["has_captions"] = os.path.exists(os.path.join(rec_dir, "captions.txt"))
-                job_copy["has_summary"] = os.path.exists(os.path.join(rec_dir, "summary.md"))
-                
-        all_jobs.append(job_copy)
+    """Get all historical and active jobs securely attached to the user."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT job_id, url FROM meetings WHERE user_email = ?", (user_email,))
+        user_rows = cur.fetchall()
         
-    running_ids = set(jobs_db.keys())
-    
-    # 2. Fetch from disk
+    user_jobs = {row["job_id"]: dict(row) for row in user_rows}
+    all_jobs = []
     rec_dir = "recordings"
-    if os.path.exists(rec_dir):
-        for folder in os.listdir(rec_dir):
-            if folder in running_ids:
-                continue
-            meta_path = os.path.join(rec_dir, folder, "metadata.json")
+    
+    for jid, db_meta in user_jobs.items():
+        job_copy = {
+            "job_id": jid,
+            "url": db_meta["url"],
+            "status": "completed", 
+            "duration_seconds": 0,
+            "has_audio": False,
+            "has_captions": False,
+            "has_summary": False,
+            "summary_failed": False,
+            "captions_count": 0
+        }
+        
+        # Fold in live memory state if active
+        if jid in jobs_db:
+            mem_job = jobs_db[jid]
+            bot = bots_db.get(jid)
+            if bot:
+                job_copy["status"] = bot.status
+                job_copy["captions_count"] = len(bot.captions) if hasattr(bot, 'captions') else 0
+            else:
+                res = mem_job.get("result", {})
+                if res:
+                    job_copy["status"] = mem_job.get("status", "completed")
+                    job_copy["duration_seconds"] = res.get("duration_seconds", 0)
+        else:
+            # Fold in disk metadata.json if concluded
+            meta_path = os.path.join(rec_dir, jid, "metadata.json")
             if os.path.exists(meta_path):
                 try:
                     with open(meta_path, "r") as f:
                         meta = json.load(f)
-                        # Unconditionally verify physical presence to allow deletion sync
-                        meta["has_audio"] = os.path.exists(os.path.join(rec_dir, folder, "audio.wav"))
-                        meta["has_captions"] = os.path.exists(os.path.join(rec_dir, folder, "captions.txt"))
-                        meta["has_summary"] = os.path.exists(os.path.join(rec_dir, folder, "summary.md"))
-                        meta["summary_failed"] = os.path.exists(os.path.join(rec_dir, folder, ".summary_failed"))
-                        all_jobs.append(meta)
-                except Exception:
-                    pass
-            elif folder.startswith("Meet-") or len(folder) == 8:
-                all_jobs.append({
-                    "job_id": folder,
-                    "status": "completed",
-                    "url": f"https://meet.google.com/{folder.split('-')[1]}" if folder.startswith("Meet-") else "Legacy",
-                    "duration_seconds": 0,
-                    "has_audio": os.path.exists(os.path.join(rec_dir, folder, "audio.wav")),
-                    "has_captions": os.path.exists(os.path.join(rec_dir, folder, "captions.txt")),
-                    "has_summary": os.path.exists(os.path.join(rec_dir, folder, "summary.md")),
-                    "summary_failed": os.path.exists(os.path.join(rec_dir, folder, ".summary_failed"))
-                })
-                
+                        job_copy["duration_seconds"] = meta.get("duration_seconds", 0)
+                        job_copy["captions_count"] = meta.get("captions_count", 0)
+                        job_copy["status"] = meta.get("status", "completed")
+                except Exception: pass
+            else:
+                # If it crashed instantly before writing metadata, mark failed gracefully
+                if not os.path.exists(os.path.join(rec_dir, jid)):
+                    job_copy["status"] = "failed"
+                    
+        # Verify physical disk payloads
+        folder = os.path.join(rec_dir, jid)
+        job_copy["has_audio"] = os.path.exists(os.path.join(folder, "audio.wav"))
+        job_copy["has_captions"] = os.path.exists(os.path.join(folder, "captions.txt"))
+        job_copy["has_summary"] = os.path.exists(os.path.join(folder, "summary.md"))
+        job_copy["summary_failed"] = os.path.exists(os.path.join(folder, ".summary_failed"))
+        all_jobs.append(job_copy)
+
     return all_jobs
 
 
 @app.post("/stop-bot/{job_id}")
 async def stop_bot(job_id: str, user_email: str = Depends(verify_token)):
     """Send stop signal to an active bot."""
+    check_ownership(job_id, user_email)
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -241,6 +278,7 @@ async def stop_bot(job_id: str, user_email: str = Depends(verify_token)):
 @app.post("/summarize/{job_id}")
 async def summarize_bot(job_id: str, background_tasks: BackgroundTasks, user_email: str = Depends(verify_token)):
     """Trigger the LLM 3-stage summarizer in the background."""
+    check_ownership(job_id, user_email)
     rec_dir = os.path.join("recordings", job_id)
     if not os.path.exists(rec_dir):
         raise HTTPException(status_code=404, detail="Job recordings not found")
@@ -257,7 +295,8 @@ async def summarize_bot(job_id: str, background_tasks: BackgroundTasks, user_ema
 
 @app.get("/download/{job_id}/{file_type}")
 async def download_file(job_id: str, file_type: str, user_email: str = Depends(verify_token)):
-    """Download audio, captions, or summary file."""
+    """Download audio, captions, or summary file securely natively."""
+    check_ownership(job_id, user_email)
     allowed = {"audio": "audio.wav", "captions": "captions.txt", "summary": "summary.md"}
     if file_type not in allowed:
         raise HTTPException(status_code=400, detail="Invalid file type")

@@ -11,3 +11,5 @@ firebase-credentials.json
 *.key
 .DS_Store
 Meeting Buddy OAuth Client.txt
+chromedriver-linux64/
+chromedriver-linux64.zip

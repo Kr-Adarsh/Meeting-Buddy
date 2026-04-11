@@ -172,6 +172,7 @@ class MeetBot:
         self._create_null_sink()
 
         options = uc.ChromeOptions()
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--window-size=1280,720")

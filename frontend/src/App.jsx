@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 import Login from './Login';
+import ReactMarkdown from 'react-markdown';
 
 const API_URL = "http://localhost:8000";
 
@@ -43,6 +44,11 @@ function App() {
   // Inline Peek States
   const [peekJobId, setPeekJobId] = useState(null);
   const [peekCaptions, setPeekCaptions] = useState([]);
+
+  // Summary Render States
+  const [summaryJobId, setSummaryJobId] = useState(null);
+  const [summaryText, setSummaryText] = useState("");
+
   const [isSummarizing, setIsSummarizing] = useState({});
 
   // Clear isSummarizing lock if the backend confirmed it finished (either success or failed)
@@ -210,7 +216,7 @@ function App() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(downloadUrl);
-    } catch(err) {
+    } catch (err) {
       console.error(err);
     }
   };
@@ -266,7 +272,7 @@ function App() {
           const res = await authFetch(`/download/${job.job_id}/captions`);
           if (res.ok) {
             const text = await res.text();
-            const lines = text.split('\\n').filter(l => l.trim().length > 0).map(line => {
+            const lines = text.split('\n').filter(l => l.trim().length > 0).map(line => {
               const match = line.match(/^\[(.*?)\] (.*?): (.*)$/);
               if (match) return { timestamp: match[1], speaker: match[2], text: match[3] };
               return { text: line };
@@ -276,6 +282,27 @@ function App() {
         } catch (e) { }
       } else {
         setPeekCaptions([]);
+      }
+    }
+  };
+
+  const toggleSummary = async (job) => {
+    if (summaryJobId === job.job_id) {
+      setSummaryJobId(null);
+      setSummaryText("");
+    } else {
+      setSummaryJobId(job.job_id);
+      setSummaryText("...Loading summary from server...");
+      try {
+        const res = await authFetch(`/download/${job.job_id}/summary`);
+        if (res.ok) {
+          const text = await res.text();
+          setSummaryText(text);
+        } else {
+          setSummaryText("**Error**: Failed to load summary from the server.");
+        }
+      } catch (e) {
+        setSummaryText("**Error**: Network request failed.");
       }
     }
   };
@@ -295,7 +322,7 @@ function App() {
             <p className="subtitle">Record & capture your Google Meet sessions</p>
           </div>
         </div>
-        
+
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
@@ -412,7 +439,12 @@ function App() {
                             <button onClick={() => download(job.job_id, 'captions')} className="raw-download-btn">Captions</button>
                           )}
                           {job.has_summary ? (
-                            <button onClick={() => download(job.job_id, 'summary')} className="raw-download-btn" style={{ background: 'var(--success)', color: '#fff', border: 'none' }}>Download Summary</button>
+                            <>
+                              <button onClick={() => toggleSummary(job)} className="raw-download-btn" style={summaryJobId === job.job_id ? { background: 'rgba(139, 92, 246, 0.15)', borderColor: 'var(--primary)', color: 'var(--text)' } : {}}>
+                                {summaryJobId === job.job_id ? <><X size={14} style={{ display: 'inline', marginBottom: '-2px', marginRight: '4px' }} /> Hide Summary</> : <><Eye size={14} style={{ display: 'inline', marginBottom: '-2px', marginRight: '4px' }} /> View Summary</>}
+                              </button>
+                              <button onClick={() => download(job.job_id, 'summary')} className="raw-download-btn" style={{ background: 'var(--success)', color: '#fff', border: 'none' }}><Download size={14} style={{ display: 'inline', marginBottom: '-2px', marginRight: '4px' }} /> Download Summary</button>
+                            </>
                           ) : isSummarizing[job.job_id] ? (
                             <button disabled className="raw-download-btn" style={{ opacity: 0.6 }}>Generating...</button>
                           ) : job.summary_failed ? (
@@ -449,6 +481,13 @@ function App() {
                         )}
                         <div ref={captionsEndRef} />
                       </div>
+                    </div>
+                  )}
+
+                  {/* Inline Summary Render */}
+                  {summaryJobId === job.job_id && (
+                    <div className="inline-summary-drawer markdown-body" style={{ background: 'var(--panel-bg)', padding: '1.5rem', marginTop: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', lineHeight: '1.6', fontSize: '15px' }}>
+                      <ReactMarkdown>{summaryText}</ReactMarkdown>
                     </div>
                   )}
                 </div>
