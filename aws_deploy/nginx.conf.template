@@ -3,7 +3,7 @@ server {
     server_name _;
 
     # Root web server pointing to our Vite React Build
-    root /home/ubuntu/MeetingBuddy/frontend/dist;
+    root /home/ubuntu/Meeting-Buddy/frontend/dist;
     index index.html index.htm;
 
     # Removed network-level Basic Auth directly in favor of Application-level Google OAuth
@@ -23,8 +23,8 @@ server {
         proxy_set_header Host $host;
     }
 
-    location /deploy {
-        proxy_pass http://127.0.0.1:8000/deploy;
+    location /deploy-bot {
+        proxy_pass http://127.0.0.1:8000/deploy-bot;
         proxy_set_header Host $host;
     }
 

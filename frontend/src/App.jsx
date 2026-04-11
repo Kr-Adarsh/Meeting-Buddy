@@ -7,7 +7,7 @@ import './App.css';
 import Login from './Login';
 import ReactMarkdown from 'react-markdown';
 
-const API_URL = "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 function App() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('mb_token'));

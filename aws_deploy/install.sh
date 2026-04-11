@@ -66,9 +66,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable meetingbuddy.service
 sudo systemctl restart meetingbuddy.service
 
-echo "================================================="
-echo "🎉 FULL DEPLOYMENT COMPLETE!"
+echo "*---*"
+echo "FULL DEPLOYMENT COMPLETE!"
 echo "The Selenium Bot, React UI, and SQLite Backend are now live on your server."
 echo "Make sure your .env variables are properly seated!"
 echo "Monitor logs with: journalctl -u meetingbuddy.service -f"
-echo "================================================="
+echo "*---*"
