@@ -110,7 +110,7 @@ def verify_token(authorization: Optional[str] = Header(None)):
     try:
         # Pass the Google Client ID if available, otherwise just verify signature
         client_id = os.environ.get("GOOGLE_CLIENT_ID")
-        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_id, clock_skew_in_seconds=60)
         email = idinfo.get("email")
         if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
             raise HTTPException(status_code=403, detail="Email not allowed to access this resource")
