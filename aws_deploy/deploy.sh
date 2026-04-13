@@ -10,6 +10,14 @@ echo "[1/5] Installing / Updating Python Backend Dependencies..."
 source .venv/bin/activate
 pip install -r requirements.txt
 
+echo "[1.5] Enforcing OS-Level Virtual Audio Drivers..."
+sudo apt-get install -y pulseaudio pulseaudio-utils psmisc > /dev/null 2>&1
+# Kill any hung pulse daemons
+killall pulseaudio 2>/dev/null || true
+# Force launch daemon unconditionally
+pulseaudio -D --exit-idle-time=-1 || true
+echo "✅ PulseAudio OS daemon injected."
+
 echo "[2/5] Syncing Nginx Reverse Proxy..."
 sudo cp aws_deploy/nginx.conf.template /etc/nginx/sites-available/meetingbuddy
 sudo systemctl reload nginx
