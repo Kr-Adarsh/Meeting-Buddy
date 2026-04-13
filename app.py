@@ -8,7 +8,6 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -47,14 +46,11 @@ app = FastAPI(title="Meeting Buddy API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-os.makedirs("debug_screenshots", exist_ok=True)
-app.mount("/debug_screenshots", StaticFiles(directory="debug_screenshots"), name="debug")
 
 # ── In-memory stores 
 

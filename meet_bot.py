@@ -64,12 +64,16 @@ class MeetBot:
             self.status = "joining"
             self._log("Starting Meeting Buddy", f"URL: {self.meet_url}")
             self._launch_chrome()
+            self._debug_snapshot("00_after_launch")
 
             if self._should_stop():
                 raise Exception("Stopped by user before joining")
 
             self._navigate_to_meet()
+            self._debug_snapshot("01_after_navigation")
+            
             self._dismiss_dialogs()
+            self._debug_snapshot("02_after_dialogs")
 
             if self._should_stop():
                 raise Exception("Stopped by user before joining")
@@ -78,13 +82,19 @@ class MeetBot:
             if self._is_in_meeting():
                 self._log("Already in meeting (signed-in user)")
             else:
-                # Guest flow: enter name, turn off mic/cam, click join
+            # Guest flow: enter name, turn off mic/cam, click join
                 self._enter_name()
+                self._debug_snapshot("03_after_name")
+                
                 self._turn_off_mic_cam()
-                self._screenshot("02_before_join")
+                self._debug_snapshot("04_before_join")
 
                 if self._should_stop():
                     raise Exception("Stopped by user before joining")
+
+                if self._is_blocked():
+                    self._debug_snapshot("BLOCKED")
+                    raise Exception("Blocked by Google Meet")
 
                 self._click_join()
                 self._wait_for_admission()
@@ -111,7 +121,7 @@ class MeetBot:
         except Exception as e:
             self.status = "failed"
             self._log("FATAL", str(e))
-            self._screenshot("error_final")
+            self._debug_snapshot("99_failure_state")
             self._finalize()
             result = self._build_result()
             result["error"] = str(e)
@@ -172,7 +182,7 @@ class MeetBot:
         self._create_null_sink()
 
         options = uc.ChromeOptions()
-        options.add_argument("--headless=new")
+        # options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--window-size=1280,720")
@@ -701,6 +711,48 @@ class MeetBot:
             self.driver.save_screenshot(path)
         except Exception:
             pass
+
+    def _debug_snapshot(self, label):
+        try:
+            ts = int(time.time())
+            
+            # Make sure per-run directory exists
+            run_dir = os.path.join(DEBUG_DIR, self.job_id)
+            os.makedirs(run_dir, exist_ok=True)
+            
+            base = os.path.join(run_dir, f"{self.job_id}_{label}_{ts}")
+
+            # Screenshot
+            self.driver.save_screenshot(base + ".png")
+
+            # Page HTML
+            with open(base + ".html", "w", encoding="utf-8") as f:
+                f.write(self.driver.page_source)
+
+            # Visible text
+            text = self.driver.execute_script("return document.body.innerText || ''")
+            with open(base + ".txt", "w", encoding="utf-8") as f:
+                f.write(text)
+
+            # URL
+            with open(base + "_url.txt", "w") as f:
+                f.write(self.driver.current_url)
+
+            self._log(f"📸 Debug snapshot saved: {label}")
+
+        except Exception as e:
+            self._log(f"Debug snapshot failed: {e}")
+
+    def _is_blocked(self):
+        try:
+            text = self.driver.execute_script("return document.body.innerText || ''").lower()
+            return any(x in text for x in [
+                "you can't join this video call",
+                "return to home screen",
+                "not allowed to join",
+            ])
+        except Exception:
+            return False
 
     def _log(self, msg, detail=""):
         prefix = f"[BOT:{self.job_id}]"
