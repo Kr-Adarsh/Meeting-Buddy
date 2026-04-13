@@ -21,7 +21,7 @@ export default function Login({ setAuthToken, setUser }) {
         </div>
         <h1 style={{ color: 'var(--text)', marginBottom: '0.5rem', fontSize: '24px' }}>Meeting Buddy</h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '15px' }}>
-          Secure access completely locked down to authorized workspace operators.
+          Welcome back! Sign in securely with any Google account to deploy the bot.
         </p>
 
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>

@@ -112,8 +112,7 @@ def verify_token(authorization: Optional[str] = Header(None)):
         client_id = os.environ.get("GOOGLE_CLIENT_ID")
         idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_id, clock_skew_in_seconds=60)
         email = idinfo.get("email")
-        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-            raise HTTPException(status_code=403, detail="Email not allowed to access this resource")
+        # Whitelist intentionally removed: ANY valid Google account is now permitted.
         return email
     except Exception as e:
         import traceback
@@ -122,7 +121,7 @@ def verify_token(authorization: Optional[str] = Header(None)):
             f.write(f"Error: {str(e)}\n\n")
             f.write(traceback.format_exc())
             f.write(f"\nToken len: {len(token)}\n")
-        raise HTTPException(status_code=401, detail="Invalid Google OAuth token")
+        raise HTTPException(status_code=401, detail=f"Google OAuth Error: {str(e)}")
 
 # ── Endpoints ───────
 
