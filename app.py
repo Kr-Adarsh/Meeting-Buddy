@@ -259,6 +259,45 @@ async def get_all_jobs(user_email: str = Depends(verify_token)):
     return all_jobs
 
 
+@app.delete("/jobs/failed")
+async def delete_failed_jobs(user_email: str = Depends(verify_token)):
+    """Wipe out all definitively failed jobs cleanly from the database."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT job_id FROM meetings WHERE user_email = ?", (user_email,))
+        user_rows = cur.fetchall()
+        
+    user_job_ids = [row["job_id"] for row in user_rows]
+    rec_dir = "recordings"
+    
+    deleted_count = 0
+    with sqlite3.connect(DB_PATH) as conn:
+        for jid in user_job_ids:
+            # We ONLY delete logically aborted/failed ones that don't have good data
+            meta_path = os.path.join(rec_dir, jid, "metadata.json")
+            status = "failed"
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r") as f:
+                        meta = json.load(f)
+                        status = meta.get("status", "completed")
+                except Exception: pass
+            else:
+                if jid in jobs_db:
+                    status = jobs_db[jid].get("status", "failed")
+            
+            if status == "failed":
+                conn.execute("DELETE FROM meetings WHERE job_id = ?", (jid,))
+                if jid in jobs_db: del jobs_db[jid]
+                if jid in bots_db: del bots_db[jid]
+                deleted_count += 1
+                
+        conn.commit()
+    
+    return {"message": f"Successfully deleted {deleted_count} failed meetings.", "deleted": deleted_count}
+
+
 @app.post("/stop-bot/{job_id}")
 async def stop_bot(job_id: str, user_email: str = Depends(verify_token)):
     """Send stop signal to an active bot."""

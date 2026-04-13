@@ -67,12 +67,26 @@ def main():
 
     options = uc.ChromeOptions()
 
-    # ⚠️ Keep same as your bot for consistency
+    # ⚠️ Exact identical arguments as meet_bot.py
     # options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1280,720")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--autoplay-policy=no-user-gesture-required")
+    options.add_argument("--use-fake-ui-for-media-stream")
+    options.add_argument("--use-fake-device-for-media-stream")
+
+    # Generate a unique temp profile for this test run exactly like the Bot
+    run_dir = get_next_run_dir()
+    temp_profile = os.path.join(run_dir, "test_profile")
+    options.add_argument(f"--user-data-dir={temp_profile}")
+
+    options.add_experimental_option("prefs", {
+        "profile.default_content_setting_values.media_stream_mic": 1,
+        "profile.default_content_setting_values.media_stream_camera": 1,
+        "profile.default_content_setting_values.notifications": 1,
+    })
 
     # Enable logs
     options.set_capability("goog:loggingPrefs", {
@@ -81,7 +95,6 @@ def main():
 
     driver = uc.Chrome(options=options, version_main=146)
 
-    run_dir = get_next_run_dir()
     print(f"[INFO] Saving absolute telemetry into: {run_dir}/")
 
     try:

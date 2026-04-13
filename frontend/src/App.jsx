@@ -202,6 +202,16 @@ function App() {
     }
   };
 
+  // ── Clear failed ────────────────────────
+  const handleClearFailed = async () => {
+    try {
+      await authFetch(`/jobs/failed`, { method: 'DELETE' });
+      // Implicitly re-fetches naturally via the polling loop
+    } catch (e) {
+      console.error('Clear failed sweeps error:', e);
+    }
+  };
+
   // ── Download ────────────────────────────
   const download = async (jobId, type) => {
     try {
@@ -379,6 +389,9 @@ function App() {
         <section className="meets-list-section">
           <div className="section-header">
             <h3>All Meets</h3>
+            <button className="clear-failed-btn" onClick={handleClearFailed} style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', borderRadius: '4px', backgroundColor: 'transparent', border: '1px solid #475569', color: '#94a3b8', cursor: 'pointer', marginLeft: 'auto' }}>
+              Clear Failed Meets
+            </button>
           </div>
 
           <div className="meets-grid">

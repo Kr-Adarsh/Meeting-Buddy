@@ -152,6 +152,9 @@ class MeetBot:
 
     def _create_null_sink(self):
         try:
+            # Force launch PulseAudio daemon in case xvfb didn't spawn one natively
+            subprocess.run(["pulseaudio", "--start"], check=False)
+            
             r = subprocess.run(
                 ["pactl", "load-module", "module-null-sink", 
                  f"sink_name={self.sink_name}", 
@@ -163,8 +166,11 @@ class MeetBot:
                 self._log(f"Created virtual audio sink: {self.sink_name}")
                 os.environ["PULSE_SINK"] = self.sink_name
                 return True
+            else:
+                self._log(f"⚠️ pactl returned non-zero: {r.stderr}")
+                
         except Exception as e:
-            self._log(f"⚠️ Could not create null sink: {e}")
+            self._log(f"⚠️ Could not create null sink (Pulse failure): {e}")
         return False
 
     def _destroy_null_sink(self):
