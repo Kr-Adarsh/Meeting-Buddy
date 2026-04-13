@@ -1,6 +1,6 @@
 server {
     listen 80;
-    server_name _;
+    server_name meetingbuddy.duckdns.org;
 
     # Root web server pointing to our Vite React Build
     root /home/ubuntu/Meeting-Buddy/frontend/dist;

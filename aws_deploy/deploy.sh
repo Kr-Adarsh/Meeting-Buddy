@@ -6,23 +6,28 @@ echo "====================================="
 echo "🚀 Meeting Buddy Cloud Deployer"
 echo "====================================="
 
-echo "[1/4] Installing / Updating Python Backend Dependencies..."
+echo "[1/5] Installing / Updating Python Backend Dependencies..."
 source .venv/bin/activate
 pip install -r requirements.txt
 
-echo "[2/4] Syncing Nginx Reverse Proxy & Removing Basic Auth..."
+echo "[2/5] Syncing Nginx Reverse Proxy..."
 sudo cp aws_deploy/nginx.conf.template /etc/nginx/sites-available/meetingbuddy
 sudo systemctl reload nginx
-echo "✅ Nginx Basic Auth purged and reloaded."
+echo "✅ Nginx config updated."
 
-echo "[3/4] Rebuilding Frontend UI (React + Vite)..."
+echo "[3/5] Re-applying SSL Certificate..."
+sudo certbot --nginx -d meetingbuddy.duckdns.org --non-interactive --reinstall
+sudo systemctl reload nginx
+echo "✅ HTTPS SSL re-applied."
+
+echo "[4/5] Rebuilding Frontend UI (React + Vite)..."
 cd frontend
 npm install
 npm run build
 cd ..
 echo "✅ Frontend injected with new Markdown UI rendering."
 
-echo "[4/4] Restarting Python Daemon Backend..."
+echo "[5/5] Restarting Python Daemon Backend..."
 sudo systemctl restart meetingbuddy.service
 
 echo "====================================="
