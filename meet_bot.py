@@ -329,32 +329,52 @@ class MeetBot:
                 except Exception:
                     pass
 
-            # Better JS fallback using exact text / nodes
+            # Extremely aggressive Native DOM approach
             try:
                 result = self.driver.execute_script("""
+                    function forceClick(node) {
+                        if (!node) return false;
+                        node.click();
+                        node.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window}));
+                        node.dispatchEvent(new MouseEvent('mouseup',   {bubbles: true, cancelable: true, view: window}));
+                        node.dispatchEvent(new MouseEvent('click',     {bubbles: true, cancelable: true, view: window}));
+                        return true;
+                    }
+                    
                     // 1. Direct class match based on user HTML
                     let btn = document.querySelector('button.UywwFc-LgbsSe');
                     if (btn && btn.offsetParent !== null && (btn.innerText.includes('Ask to join') || btn.innerText.includes('Join now'))) {
-                        btn.click();
+                        forceClick(btn);
                         return btn.innerText.trim();
                     }
                     
-                    // 2. Scan all buttons
-                    let buttons = document.querySelectorAll('button');
+                    // 2. Scan all SPAN nodes directly for "Ask to join" text (handles nested structures)
+                    let spans = Array.from(document.querySelectorAll('span, div[jsname="V67aGc"]')).filter(s => 
+                        (s.innerText || '').trim() === 'Ask to join' || 
+                        (s.innerText || '').trim() === 'Join now'
+                    );
+                    if (spans.length > 0) {
+                        let p = spans[0].closest('button') || spans[0].closest('div[role="button"]') || spans[0];
+                        forceClick(p);
+                        return spans[0].innerText.trim();
+                    }
+
+                    // 3. Scan all generic buttons
+                    let buttons = document.querySelectorAll('button, div[role="button"]');
                     for (let b of buttons) {
                         let text = (b.textContent || '').toLowerCase().trim();
                         if ((text.includes('ask to join') || text.includes('join now') 
                              || text.includes('join') || text.includes('participate')) 
                              && b.offsetParent !== null) {
-                            b.click();
+                            forceClick(b);
                             return text;
                         }
                     }
                     return null;
                 """)
                 if result:
-                    self._log(f"Joined via exact JS match: '{result}'")
-                    time.sleep(0.5)
+                    self._log(f"Joined via aggressive DOM injection: '{result}'")
+                    time.sleep(1)
                     return
             except Exception as e:
                 self._log(f"JS join error: {e}")

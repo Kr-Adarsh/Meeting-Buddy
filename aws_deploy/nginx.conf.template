@@ -33,6 +33,11 @@ server {
         proxy_set_header Host $host;
     }
     
+    location /debug_screenshots/ {
+        proxy_pass http://127.0.0.1:8000/debug_screenshots/;
+        proxy_set_header Host $host;
+    }
+    
     location /summarize/ {
         proxy_pass http://127.0.0.1:8000/summarize/;
         proxy_set_header Host $host;
