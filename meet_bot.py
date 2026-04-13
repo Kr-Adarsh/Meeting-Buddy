@@ -152,36 +152,60 @@ class MeetBot:
 
     def _create_null_sink(self):
         try:
-            # Force launch PulseAudio daemon in case xvfb didn't spawn one natively
-            subprocess.run(["pulseaudio", "--start"], check=False)
-            
-            r = subprocess.run(
-                ["pactl", "load-module", "module-null-sink", 
-                 f"sink_name={self.sink_name}", 
-                 f"sink_properties=device.description={self.sink_name}"],
-                capture_output=True, text=True, timeout=5
+            # Completely abandon the system PulseAudio which is blocking our XVFB connection via strict Session bindings.
+            # Instead, dynamically summon a totally isolated PulseAudio server daemon per-bot exclusively via UNIX socket!
+            self.pulse_dir = os.path.join(DEBUG_DIR, f"pulse_{self.job_id}")
+            os.makedirs(self.pulse_dir, exist_ok=True)
+            self.pulse_socket = os.path.join(self.pulse_dir, "pulse.sock")
+
+            # Native command forcefully loading absolute minimum modules without probing hardware
+            cmd = [
+                "pulseaudio", "-n",
+                f"--load=module-native-protocol-unix auth-anonymous=1 socket={self.pulse_socket}",
+                f"--load=module-null-sink sink_name={self.sink_name}",
+                "--exit-idle-time=-1",
+                "--daemonize=false"
+            ]
+
+            my_env = os.environ.copy()
+            my_env["PULSE_CONFIG_PATH"] = self.pulse_dir
+            my_env["PULSE_RUNTIME_PATH"] = self.pulse_dir
+            my_env["XDG_RUNTIME_DIR"] = self.pulse_dir
+
+            self.pulse_process = subprocess.Popen(
+                cmd, env=my_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            if r.returncode == 0:
-                self.sink_module_id = r.stdout.strip()
-                self._log(f"Created virtual audio sink: {self.sink_name}")
-                os.environ["PULSE_SINK"] = self.sink_name
-                return True
-            else:
-                self._log(f"⚠️ pactl returned non-zero: {r.stderr}")
-                
+
+            # Polling for Socket presence
+            for _ in range(30):
+                if os.path.exists(self.pulse_socket):
+                    self._log(f"Isolated Audio Daemon securely mounted to UNIX socket!")
+                    # Force Chrome and FFmpeg internally to route exclusively entirely into this exact socket!
+                    os.environ["PULSE_SERVER"] = f"unix:{self.pulse_socket}"
+                    os.environ["PULSE_SINK"] = self.sink_name
+                    self.sink_module_id = "isolated_pulse_daemon"
+                    return True
+                time.sleep(0.1)
+
+            self._log("⚠️ Isolated PulseAudio Daemon failed to map socket.")
+
         except Exception as e:
-            self._log(f"⚠️ Could not create null sink (Pulse failure): {e}")
+            self._log(f"⚠️ Could not create isolated sink: {e}")
         return False
 
     def _destroy_null_sink(self):
-        if self.sink_module_id:
+        if hasattr(self, 'pulse_process') and self.pulse_process.poll() is None:
             try:
-                subprocess.run(["pactl", "unload-module", self.sink_module_id], timeout=5)
-                self._log("Destroyed virtual audio sink")
+                self.pulse_process.terminate()
+                self.pulse_process.wait(timeout=3)
             except Exception:
-                pass
-            if "PULSE_SINK" in os.environ:
-                del os.environ["PULSE_SINK"]
+                self.pulse_process.kill()
+            self._log("Isolated virtual audio daemon wiped.")
+            
+        if "PULSE_SERVER" in os.environ:
+            del os.environ["PULSE_SERVER"]
+        if "PULSE_SINK" in os.environ:
+            del os.environ["PULSE_SINK"]
 
     def _launch_chrome(self):
         chrome_version, chrome_binary = self._detect_chrome_version()
