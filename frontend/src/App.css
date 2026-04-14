@@ -26,35 +26,35 @@
   --font: 'Inter', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   --surface: #ffffff;
-  --surface-light: #f8fafc;
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(0, 0, 0, 0.05);
+  --surface-light: #f9f9f9;
+  --glass-bg: #ffffff;
+  --glass-border: #eaeaea;
 }
 
 :root[data-theme='dark'] {
-  --primary: #818cf8;
-  --primary-dark: #6366f1;
-  --primary-light: rgba(129, 140, 248, 0.12);
-  --success: #31bb63;
-  --success-bg: rgba(74, 222, 128, 0.1);
-  --warning: #fbbf24;
-  --warning-bg: rgba(251, 191, 36, 0.1);
-  --error: #f87171;
-  --error-bg: rgba(248, 113, 113, 0.1);
-  --text: #f1f5f9;
+  --primary: #8b5cf6;
+  --primary-dark: #7c3aed;
+  --primary-light: rgba(139, 92, 246, 0.15);
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --text: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --bg: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-elevated: #1e293b;
-  --border: #334155;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --surface: #1e293b;
-  --surface-light: #0f172a;
-  --glass-bg: rgba(30, 41, 59, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.05);
+  --bg: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-elevated: #1a1a1a;
+  --border: #262626;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.8);
+  --surface: #111111;
+  --surface-light: #171717;
+  --glass-bg: rgba(17, 17, 17, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.08);
 }
 
 /* ── Base ───────────────────────────────── */
@@ -634,14 +634,12 @@
 
 /* New Concurrent Meets UI */
 .meets-list-section {
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
+  background: var(--surface-light);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 1.5rem;
+  padding: 1.75rem;
   margin-top: 2rem;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow);
 }
 
 .meets-grid {
@@ -656,20 +654,20 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 1.25rem;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   box-shadow: var(--shadow);
 }
 
 .meet-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
   border-color: var(--primary-light);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .active-card {
   border-color: var(--primary);
   background: var(--glass-bg);
-  box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.08);
 }
 
 .meet-card-header {
@@ -705,18 +703,18 @@
 
 .status-badge.recording,
 .status-badge.joining {
-  background: rgba(139, 92, 246, 0.2);
-  color: #c4b5fd;
+  background: var(--primary-light);
+  color: var(--primary);
 }
 
 .status-badge.completed {
-  background: rgba(16, 185, 129, 0.2);
-  color: #6ee7b7;
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .status-badge.failed {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .meet-card-body {

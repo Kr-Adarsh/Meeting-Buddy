@@ -747,14 +747,35 @@ class MeetBot:
         raw_msg = f"{msg} {detail}".strip()
         print(f"{prefix} {raw_msg}")
         
-        # Flush to append-only activity pipeline dynamically!
-        activity_file = os.path.join(self.job_dir, "activity.txt")
-        try:
-            with open(activity_file, "a", encoding="utf-8") as f:
-                f.write(raw_msg + "\n")
-                f.flush()
-        except Exception:
-            pass
+        # Filter raw CLI strings into aesthetic user-facing UI updates
+        ui_routing = {
+            "Starting Meeting Buddy": "Launching browser environment...",
+            "Name entered": "Entering meeting alias...",
+            "Joining meeting": "Requesting to join...",
+            "Joined meeting": "Successfully joined.",
+            "Caption observer injected": "Initializing live captions...",
+            "Starting recording": "Recording active.",
+            "Meeting ended": "Meeting has concluded natively."
+        }
+        
+        ui_update = None
+        # Clean emojis natively just in case legacy strings leak
+        clean_msg = raw_msg.replace("🛑", "").replace("🎙️", "").replace("⚠️", "").replace("💬", "").replace("📍", "").replace("🔔", "").strip()
+        
+        for key, text in ui_routing.items():
+            if key in clean_msg:
+                ui_update = text
+                break
+                
+        # Only flush curated updates into the Frontend streaming tunnel
+        if ui_update:
+            activity_file = os.path.join(self.job_dir, "activity.txt")
+            try:
+                with open(activity_file, "a", encoding="utf-8") as f:
+                    f.write(ui_update + "\\n")
+                    f.flush()
+            except Exception:
+                pass
 
 #  Standalone tes
 if __name__ == "__main__":

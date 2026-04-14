@@ -11,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 
 function App() {
   const [theme, setTheme] = useState('dark');
+  const [imgError, setImgError] = useState(false);
   
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -128,18 +129,21 @@ function App() {
             const fr = await authFetch(`/download/${peekJobId}/captions`);
             if (fr.ok) {
               const staticText = await fr.text();
-              const lines = staticText.split('\n').filter(l => l.trim().length > 0);
-              const formatted = lines.map(l => {
-                const parts = l.split('] ');
-                if (parts.length > 1) {
-                  return { time: parts[0] + ']', text: parts.slice(1).join('] ') };
-                }
-                return { time: '', text: l };
+              const lines = staticText.split('\\n').filter(l => l.trim().length > 0);
+              const formatted = lines.map(line => {
+                const match = line.match(/^\\[(.*?)\\] (.*?): (.*)$/);
+                if (match) return { timestamp: match[1], speaker: match[2], text: match[3] };
+                return { text: line };
               });
               setPeekCaptions(formatted);
             }
           } else {
-            setPeekCaptions(sdata.live_captions || []);
+            const formatted = (sdata.live_captions || []).map(line => {
+              const match = line.match(/^\\[(.*?)\\] (.*?): (.*)$/);
+              if (match) return { timestamp: match[1], speaker: match[2], text: match[3] };
+              return { text: line };
+            });
+            setPeekCaptions(formatted);
           }
         } catch (e) {
           console.error(e);
@@ -345,7 +349,18 @@ function App() {
               <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text)' }}>{user.name}</span>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{user.email}</span>
             </div>
-            {user.picture && <img src={user.picture} alt="Avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)' }} />}
+            {user.picture && !imgError ? (
+              <img 
+                src={user.picture} 
+                alt="Avatar" 
+                onError={() => setImgError(true)} 
+                style={{ width: '40px', height: '40px', borderRadius: '50%', border: '1px solid var(--border)', objectFit: 'cover' }} 
+              />
+            ) : (
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px' }}>
+                {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+            )}
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="header-icon-btn" title="Toggle Theme" style={{ marginLeft: '12px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
               {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -440,8 +455,8 @@ function App() {
                     )}
                     
                     {isActive && job.latest_activity && (
-                      <div className="meet-activity" style={{ fontSize: '0.85rem', color: 'var(--primary)', marginTop: '8px', padding: '6px 10px', background: 'var(--background)', borderRadius: '4px', borderLeft: '2px solid var(--primary)' }}>
-                        ⚡ {job.latest_activity}
+                      <div className="meet-activity" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px', padding: '6px 10px', background: 'var(--bg-secondary)', borderRadius: '4px', borderLeft: '2px solid var(--text-muted)' }}>
+                        {job.latest_activity}
                       </div>
                     )}
 
@@ -502,7 +517,7 @@ function App() {
                                   {new Date(cap.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               )}
-                              {cap.speaker && <strong style={{ color: '#8b5cf6', marginRight: '6px' }}>{cap.speaker}:</strong>}
+                              {cap.speaker && <strong style={{ color: 'var(--text)', marginRight: '6px' }}>{cap.speaker}:</strong>}
                               <span className="caption-text">{cap.text}</span>
                             </div>
                           ))
