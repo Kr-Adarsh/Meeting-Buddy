@@ -14,6 +14,8 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from audio_manager import BotAudioSession
+
 
 RECORDINGS_DIR = "recordings"
 DEBUG_DIR = "debug_screenshots"
@@ -29,7 +31,13 @@ class MeetBot:
         self.bot_name = bot_name
 
         self.driver = None
-        self.ffmpeg_process = None
+        # self.ffmpeg_process = None
+        self.audio = BotAudioSession(
+            job_id=self.job_id,
+            recordings_dir=RECORDINGS_DIR,
+            debug_dir=DEBUG_DIR,
+        )
+
         self.stop_event = threading.Event()
         self.captions = []
         self.start_time = None
@@ -37,11 +45,12 @@ class MeetBot:
 
         # Paths
         self.job_dir = os.path.join(RECORDINGS_DIR, job_id)
+
         self.audio_file = os.path.join(self.job_dir, "audio.wav")
         self.captions_file = os.path.join(self.job_dir, "captions.txt")
-        self._temp_audio = os.path.join(self.job_dir, "_temp_audio.wav")
-        self.sink_name = f"MeetBotSink_{job_id}"
-        self.sink_module_id = None
+        # self._temp_audio = os.path.join(self.job_dir, "_temp_audio.wav")
+        # self.sink_name = f"MeetBotSink_{job_id}"
+        # self.sink_module_id = None
 
     def stop(self):
         """Signal the bot to stop recording and leave."""
@@ -150,45 +159,9 @@ class MeetBot:
                     pass
         return None, None
 
-    def _create_null_sink(self):
-        try:
-            result = subprocess.run([
-                "pactl", "load-module",
-                "module-null-sink",
-                f"sink_name={self.sink_name}"
-            ], capture_output=True, text=True)
-
-            if result.returncode != 0:
-                self._log(f"Failed to create sink: {result.stderr}")
-                return False
-
-            self._log(f"Created sink: {self.sink_name}")
-            os.environ["PULSE_SINK"] = self.sink_name
-            self.sink_module_id = True
-            return True
-
-        except Exception as e:
-            self._log(f"Sink creation error: {e}")
-            return False
-
-    def _destroy_null_sink(self):
-        if hasattr(self, 'pulse_process') and self.pulse_process.poll() is None:
-            try:
-                self.pulse_process.terminate()
-                self.pulse_process.wait(timeout=3)
-            except Exception:
-                self.pulse_process.kill()
-            self._log("Isolated virtual audio daemon wiped.")
-            
-        if "PULSE_SERVER" in os.environ:
-            del os.environ["PULSE_SERVER"]
-        if "PULSE_SINK" in os.environ:
-            del os.environ["PULSE_SINK"]
-
     def _launch_chrome(self):
         chrome_version, chrome_binary = self._detect_chrome_version()
-        self._create_null_sink()
-
+        self.audio.prepare_for_browser() #sink
         options = uc.ChromeOptions()
         # options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
@@ -216,10 +189,13 @@ class MeetBot:
         if chrome_binary:
             options.binary_location = chrome_binary
 
-        self.driver = uc.Chrome(
-            options=options,
-            version_main=chrome_version,
-        )
+        # 🚨 Use the Audio Manager's context manager to dynamically inject Pulse variables into the subprocess natively!
+        with self.audio.patch_env_for_chrome():
+            self.driver = uc.Chrome(
+                options=options,
+                version_main=chrome_version,
+            )
+            
         self.driver.implicitly_wait(0.5)
         self._log("Chrome launched")
 
@@ -464,33 +440,16 @@ class MeetBot:
     #  AUDIO RECORDING  (FFmpeg + PulseAudio)
 
     def _start_audio_recording(self):
-        # Fallback to default if sink didn't create
-        source = f"{self.sink_name}.monitor" if self.sink_module_id else "default"
-        
-        cmd = [
-            "ffmpeg", "-y",
-            "-f", "pulse", "-i", source,
-            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-            self._temp_audio,
-        ]
-        self.ffmpeg_process = subprocess.Popen(
-            cmd,
-            env={**os.environ, "PULSE_SERVER": f"unix:{self.pulse_socket}", "PULSE_SINK": self.sink_name},
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        self._log(f"🎙️ Audio recording started on {source}")
+        self.audio.start_recording()
+        self._log(f"🎙️ Audio recording started on {self.audio.sink_name}.monitor")
 
     def _stop_audio_recording(self):
-        if self.ffmpeg_process and self.ffmpeg_process.poll() is None:
-            self.ffmpeg_process.terminate()
-            try:
-                self.ffmpeg_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.ffmpeg_process.kill()
-        if os.path.exists(self._temp_audio):
-            os.rename(self._temp_audio, self.audio_file)
-            size_mb = os.path.getsize(self.audio_file) / (1024 * 1024)
+        saved = self.audio.stop_recording()
+        if saved:
+            size_mb = saved.stat().st_size / (1024 * 1024)
             self._log(f"💾 Audio saved ({size_mb:.1f} MB)")
+        else:
+            self._log("⚠️ No audio file was produced")
 
     #  CAPTIONS SCRAPING
 
@@ -713,7 +672,7 @@ class MeetBot:
             except Exception:
                 pass
         
-        self._destroy_null_sink()
+        self.audio.cleanup()
 
     def _screenshot(self, name):
         try:

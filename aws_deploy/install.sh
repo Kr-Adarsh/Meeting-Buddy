@@ -19,7 +19,7 @@ fi
 # 2. INSTALL SYSTEM DEPENDENCIES
 echo "[2/7] Installing Linux Headless Dependencies..."
 sudo apt-get update
-sudo apt-get install -y nginx apache2-utils xvfb pulseaudio dbus-x11 ffmpeg python3-pip python3-venv wget unzip curl
+sudo apt-get install -y nginx apache2-utils xvfb pulseaudio pulseaudio-utils dbus-x11 ffmpeg python3-pip python3-venv wget unzip curl
 
 # Install Google Chrome natively
 if ! command -v google-chrome &> /dev/null; then
