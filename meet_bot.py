@@ -6,6 +6,7 @@ Designed for local development on Linux with PulseAudio/PipeWire.
 
 import subprocess
 import os
+import shutil
 import time
 import threading
 from datetime import datetime
@@ -15,7 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from audio_manager import BotAudioSession
-
+import random
 
 RECORDINGS_DIR = "recordings"
 DEBUG_DIR = "debug_screenshots"
@@ -162,7 +163,10 @@ class MeetBot:
     def _launch_chrome(self):
         chrome_version, chrome_binary = self._detect_chrome_version()
         self.audio.prepare_for_browser() #sink
+        
         options = uc.ChromeOptions()
+        port = random.randint(10000, 60000)
+        options.add_argument(f"--remote-debugging-port={port}")
         # options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
@@ -532,7 +536,7 @@ class MeetBot:
             self._log(f"⚠️ Caption observer failed: {e}")
 
     def _collect_captions(self):
-        """Sync Javascript tracking dictionary with Python."""
+        """Sync Javascript tracking dictionary with Python and continuously flush to disk for live API access."""
         try:
             caps_dict = self.driver.execute_script("return window._mbCaptionsDict || {};")
             if caps_dict:
@@ -545,6 +549,14 @@ class MeetBot:
                 # Rebuild linear array chronologically
                 self.captions = list(self.captions_dict.values())
                 self.captions.sort(key=lambda x: x.get("timestamp", ""))
+                
+                # Continuously flush to disk! FastAPI worker expects IPC via the filesystem now!
+                with open(self.captions_file, "w", encoding="utf-8") as f:
+                    for cap in self.captions:
+                        ts = cap.get('timestamp', '')[:19] # Trim timestamp nicely
+                        speaker = cap.get('speaker', 'Unknown')
+                        f.write(f"[{ts}] {speaker}: {cap.get('text','')}\\n")
+                        
         except Exception:
             pass
 
@@ -555,7 +567,13 @@ class MeetBot:
     def _monitor_meeting(self):
         self._log("📍 Recording... (stop via UI or wait for meeting end)")
         tick = 0
+        MAX_RUNTIME_SEC = 2 * 60 * 60  # 2 Hours max
+        
         while not self._should_stop():
+            if time.time() - self.start_time > MAX_RUNTIME_SEC:
+                self._log("⏳ Hard execution limit of 2 hours hit! Forcing emergency exit...")
+                break
+                
             time.sleep(3)
             tick += 1
             self._collect_captions()
@@ -568,7 +586,8 @@ class MeetBot:
                 elapsed = tick * 3
                 self._log(f"📍 Still recording ({elapsed}s, {len(self.captions)} captions)")
 
-        self._log("🛑 Stopped by user")
+        if self._should_stop():
+            self._log("🛑 Stopped by user")
 
     def _has_meeting_ended(self):
         try:
@@ -596,11 +615,8 @@ class MeetBot:
         
         # Save Captions
         if hasattr(self, 'captions') and self.captions:
-            with open(self.captions_file, "w", encoding="utf-8") as f:
-                for cap in self.captions:
-                    ts = cap.get('timestamp', '')[:19] # Trim timestamp nicely
-                    speaker = cap.get('speaker', 'Unknown')
-                    f.write(f"[{ts}] {speaker}: {cap.get('text','')}\n")
+            # Captions are already fully synthesized to disk continuously in _collect_captions, 
+            # but final flush just confirms completion log metrics.
             self._log(f"💾 Captions saved ({len(self.captions)} entries)")
             
         # Save Metadata Ledger
@@ -648,12 +664,6 @@ class MeetBot:
             pass
 
     def _cleanup(self):
-        if self.ffmpeg_process and self.ffmpeg_process.poll() is None:
-            self.ffmpeg_process.terminate()
-            try:
-                self.ffmpeg_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.ffmpeg_process.kill()
         if self.driver:
             try:
                 self._leave_meeting() # Hang up first
@@ -673,6 +683,15 @@ class MeetBot:
                 pass
         
         self.audio.cleanup()
+        
+        # Rigorously wipe Chrome temporary profile from disk
+        temp_profile = os.path.join(DEBUG_DIR, f"profile_{self.job_id}")
+        if os.path.exists(temp_profile):
+            try:
+                shutil.rmtree(temp_profile, ignore_errors=True)
+                self._log("🗑️ User data profile cleanly wiped from disk")
+            except Exception as e:
+                self._log("⚠️ Failed to delete proxy profile", str(e))
 
     def _screenshot(self, name):
         try:

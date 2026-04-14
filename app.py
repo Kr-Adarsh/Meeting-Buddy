@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import asyncio
+import subprocess
 import uuid
 import json
 import os
@@ -55,7 +56,6 @@ app.add_middleware(
 # ── In-memory stores 
 
 jobs_db: Dict[str, dict] = {}
-bots_db: Dict[str, MeetBot] = {}
 
 
 # ── Models 
@@ -70,30 +70,7 @@ class JobResponse(BaseModel):
     message: str
 
 
-# ── Background worker 
-
-async def _run_bot_task(job_id: str, meet_url: str):
-    """Runs the bot in a background thread."""
-    bot = bots_db.get(job_id)
-    if not bot:
-        return
-
-    try:
-        jobs_db[job_id]["status"] = "joining"
-
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, bot.run)
-
-        jobs_db[job_id]["status"] = result.get("status", "completed")
-        jobs_db[job_id]["result"] = result
-        if result.get("error"):
-            jobs_db[job_id]["error"] = result["error"]
-
-    except Exception as e:
-        jobs_db[job_id]["status"] = "failed"
-        jobs_db[job_id]["error"] = str(e)
-    finally:
-        bots_db.pop(job_id, None)
+# ── Background worker (Removed entirely; replaced by subprocess model) 
 
 
 # ── Auth Dependency ──
@@ -138,13 +115,18 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, us
     dt_str = datetime.now().strftime("%d-%m-%y-%H-%M-%S")
     job_id = f"Meet-{meet_id}-{dt_str}"
 
-    bot = MeetBot(meet_url=request.url, job_id=job_id)
-    bots_db[job_id] = bot
+    process = subprocess.Popen([
+        "/home/ubuntu/Meeting-Buddy/.venv/bin/python",
+        "worker_bot.py",
+        job_id,
+        request.url
+    ])
 
     jobs_db[job_id] = {
         "job_id": job_id,
-        "status": "pending",
+        "status": "running",
         "url": request.url,
+        "process": process,
         "result": None,
         "error": None,
         "user_email": user_email
@@ -157,10 +139,10 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, us
         )
         conn.commit()
 
-    background_tasks.add_task(_run_bot_task, job_id, request.url)
+    
 
     return JobResponse(
-        job_id=job_id, status="pending", message="Meeting Buddy is deploying!"
+        job_id=job_id, status="running", message="Meeting Buddy is deploying!"
     )
 
 
@@ -183,14 +165,32 @@ async def get_job_status(job_id: str, user_email: str = Depends(verify_token)):
         raise HTTPException(status_code=404, detail="Job not found in memory")
 
     job = dict(jobs_db[job_id])
+    process = job.get("process")
 
-    # Attach live data from active bot
-    bot = bots_db.get(job_id)
-    if bot:
-        job["status"] = bot.status
-        job["captions_count"] = len(getattr(bot, 'captions', []))
-        job["live_captions"] = getattr(bot, 'captions', [])[-20:]  # last 20 for live display
+    # Mirror process state
+    if process:
+        if process.poll() is None:
+            job["status"] = "running"
+        elif job.get("status") in ["running", "pending"]:
+            job["status"] = "finished"
+    
+    if job["status"] in ["finished", "failed", "stopped"]:
+        job.pop("process", None)
+    # Stream live captions from disk since worker is fully isolated
+    job["live_captions"] = []
+    job["captions_count"] = 0
+    cap_path = os.path.join("recordings", job_id, "captions.txt")
+    if os.path.exists(cap_path):
+        try:
+            with open(cap_path, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f if line.strip()]
+                job["captions_count"] = len(lines)
+                job["live_captions"] = lines[-20:]
+        except Exception:
+            pass
 
+    # Ensure we don't accidentally leak the subprocess object via JSON
+    job.pop("process", None)
     return job
 
 
@@ -223,10 +223,13 @@ async def get_all_jobs(user_email: str = Depends(verify_token)):
         # Fold in live memory state if active
         if jid in jobs_db:
             mem_job = jobs_db[jid]
-            bot = bots_db.get(jid)
-            if bot:
-                job_copy["status"] = bot.status
-                job_copy["captions_count"] = len(bot.captions) if hasattr(bot, 'captions') else 0
+            process = mem_job.get("process")
+            if process and process.poll() is None:
+                job_copy["status"] = "running"
+                cap_path = os.path.join(rec_dir, jid, "captions.txt")
+                if os.path.exists(cap_path):
+                    with open(cap_path, "r", encoding="utf-8") as f:
+                        job_copy["captions_count"] = sum(1 for line in f if line.strip())
             else:
                 res = mem_job.get("result", {})
                 if res:
@@ -290,7 +293,6 @@ async def delete_failed_jobs(user_email: str = Depends(verify_token)):
             if status == "failed":
                 conn.execute("DELETE FROM meetings WHERE job_id = ?", (jid,))
                 if jid in jobs_db: del jobs_db[jid]
-                if jid in bots_db: del bots_db[jid]
                 deleted_count += 1
                 
         conn.commit()
@@ -305,12 +307,18 @@ async def stop_bot(job_id: str, user_email: str = Depends(verify_token)):
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    bot = bots_db.get(job_id)
-    if not bot:
-        raise HTTPException(status_code=400, detail="No active bot for this job")
+    job = jobs_db.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    bot.stop()
-    return {"message": "Stop signal sent", "job_id": job_id}
+    process = job.get("process")
+
+    if process and process.poll() is None:
+        process.terminate()
+        job["status"] = "stopped"
+        return {"message": "Bot stopped", "job_id": job_id}
+
+    return {"message": "Bot already finished", "job_id": job_id}
 
 
 @app.post("/summarize/{job_id}")
@@ -326,8 +334,7 @@ async def summarize_bot(job_id: str, background_tasks: BackgroundTasks, user_ema
         try: os.remove(fail_file)
         except: pass
         
-    loop = asyncio.get_event_loop()
-    background_tasks.add_task(lambda: loop.create_task(asyncio.to_thread(generate_meeting_summary, job_id)))
+    background_tasks.add_task(generate_meeting_summary, job_id)
     return {"status": "summarizing"}
 
 
@@ -348,7 +355,7 @@ async def download_file(job_id: str, file_type: str, user_email: str = Depends(v
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "active_bots": len(bots_db), "total_jobs": len(jobs_db)}
+    return {"status": "ok", "total_jobs": len(jobs_db)}
 
 
 
