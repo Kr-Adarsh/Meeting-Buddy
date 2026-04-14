@@ -772,7 +772,7 @@ class MeetBot:
             activity_file = os.path.join(self.job_dir, "activity.txt")
             try:
                 with open(activity_file, "a", encoding="utf-8") as f:
-                    f.write(ui_update + "\\n")
+                    f.write(ui_update + "\n")
                     f.flush()
             except Exception:
                 pass

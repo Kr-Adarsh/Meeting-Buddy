@@ -286,7 +286,7 @@ function App() {
       setPeekCaptions([]);
     } else {
       setPeekJobId(job.job_id);
-      if (job.status === 'completed' && job.has_captions) {
+      if (job.phase === 'completed' && job.has_captions) {
         // Fetch static file if completed
         try {
           const res = await authFetch(`/download/${job.job_id}/captions`);
@@ -426,6 +426,17 @@ function App() {
               const info = parseJobInfo(job.job_id, job.duration_seconds);
               const isPeeking = peekJobId === job.job_id;
 
+              // Progress Bar Logic
+              let progressValue = 0;
+              if (isActive && job.latest_activity) {
+                if (job.latest_activity.includes("Launching browser")) progressValue = 15;
+                else if (job.latest_activity.includes("Entering meeting alias")) progressValue = 35;
+                else if (job.latest_activity.includes("Requesting to join")) progressValue = 55;
+                else if (job.latest_activity.includes("Successfully joined")) progressValue = 75;
+                else if (job.latest_activity.includes("Initializing live captions")) progressValue = 90;
+                else if (job.latest_activity.includes("Recording active")) progressValue = 100;
+              }
+
               return (
                 <div key={job.job_id} className={`meet-card ${isActive ? 'active-card' : ''}`}>
                   <div className="meet-card-header">
@@ -455,8 +466,14 @@ function App() {
                     )}
                     
                     {isActive && job.latest_activity && (
-                      <div className="meet-activity" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px', padding: '6px 10px', background: 'var(--bg-secondary)', borderRadius: '4px', borderLeft: '2px solid var(--text-muted)' }}>
-                        {job.latest_activity}
+                      <div className="progress-section">
+                        <div className="progress-text">
+                          <span className="spinner">⟳</span>
+                          {job.latest_activity}
+                        </div>
+                        <div className="progress-tracker-container">
+                          <div className="progress-tracker-fill" style={{ width: `${progressValue}%` }}></div>
+                        </div>
                       </div>
                     )}
 
