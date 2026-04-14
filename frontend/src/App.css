@@ -25,30 +25,36 @@
   --radius-sm: 8px;
   --font: 'Inter', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --surface: #ffffff;
+  --surface-light: #f8fafc;
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.05);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --primary: #818cf8;
-    --primary-dark: #6366f1;
-    --primary-light: rgba(129, 140, 248, 0.12);
-    --success: #31bb63;
-    --success-bg: rgba(74, 222, 128, 0.1);
-    --warning: #fbbf24;
-    --warning-bg: rgba(251, 191, 36, 0.1);
-    --error: #f87171;
-    --error-bg: rgba(248, 113, 113, 0.1);
-    --text: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --bg: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-elevated: #1e293b;
-    --border: #334155;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  }
+:root[data-theme='dark'] {
+  --primary: #818cf8;
+  --primary-dark: #6366f1;
+  --primary-light: rgba(129, 140, 248, 0.12);
+  --success: #31bb63;
+  --success-bg: rgba(74, 222, 128, 0.1);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.1);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.1);
+  --text: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --bg: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-elevated: #1e293b;
+  --border: #334155;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --surface: #1e293b;
+  --surface-light: #0f172a;
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.05);
 }
 
 /* ── Base ───────────────────────────────── */
@@ -61,6 +67,8 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background-color: var(--bg);
+  transition: background-color 0.3s ease;
 }
 
 /* ── Header ─────────────────────────────── */
@@ -626,11 +634,14 @@
 
 /* New Concurrent Meets UI */
 .meets-list-section {
-  background: var(--surface-light);
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   margin-top: 2rem;
+  box-shadow: var(--shadow-md);
 }
 
 .meets-grid {
@@ -644,13 +655,21 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 1rem;
-  transition: all 0.2s;
+  padding: 1.25rem;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow);
+}
+
+.meet-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary-light);
 }
 
 .active-card {
-  border-color: var(--primary-light);
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.1);
+  border-color: var(--primary);
+  background: var(--glass-bg);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
 }
 
 .meet-card-header {

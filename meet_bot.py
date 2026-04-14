@@ -42,7 +42,7 @@ class MeetBot:
         self.stop_event = threading.Event()
         self.captions = []
         self.start_time = None
-        self.status = "pending"
+        self.phase = "pending"
 
         # Paths
         self.job_dir = os.path.join(RECORDINGS_DIR, job_id)
@@ -71,7 +71,7 @@ class MeetBot:
 
         try:
             # — Join —
-            self.status = "joining"
+            self.phase = "joining"
             self._log("Starting Meeting Buddy", f"URL: {self.meet_url}")
             self._launch_chrome()
             self._debug_snapshot("00_after_launch")
@@ -114,7 +114,7 @@ class MeetBot:
             self._screenshot("04_in_meeting")
 
             # — Record —
-            self.status = "recording"
+            self.phase = "recording"
             self.start_time = time.time()
             self._log("🎙️ Starting recording...")
             self._start_audio_recording()
@@ -124,12 +124,12 @@ class MeetBot:
             self._monitor_meeting()
 
             # — Finalize —
-            self.status = "completed"
+            self.phase = "completed"
             self._finalize()
             return self._build_result()
 
         except Exception as e:
-            self.status = "failed"
+            self.phase = "failed"
             self._log("FATAL", str(e))
             self._debug_snapshot("99_failure_state")
             self._finalize()
@@ -624,7 +624,7 @@ class MeetBot:
         meta = {
             "job_id": self.job_id,
             "url": self.meet_url,
-            "status": "completed" if self.status != "failed" else "failed",
+            "phase": self.phase,
             "duration_seconds": int(time.time() - self.start_time) if self.start_time else 0,
             "captions_count": len(self.captions) if hasattr(self, 'captions') else 0,
             "has_audio": os.path.exists(self.audio_file),
@@ -636,7 +636,7 @@ class MeetBot:
     def _build_result(self) -> dict:
         duration = int(time.time() - self.start_time) if self.start_time else 0
         return {
-            "status": self.status,
+            "phase": self.phase,
             "audio_file": self.audio_file if os.path.exists(self.audio_file) else None,
             "captions_file": self.captions_file if os.path.exists(self.captions_file) else None,
             "captions": self.captions,
@@ -744,7 +744,17 @@ class MeetBot:
 
     def _log(self, msg, detail=""):
         prefix = f"[BOT:{self.job_id}]"
-        print(f"{prefix} {msg} {detail}".strip())
+        raw_msg = f"{msg} {detail}".strip()
+        print(f"{prefix} {raw_msg}")
+        
+        # Flush to append-only activity pipeline dynamically!
+        activity_file = os.path.join(self.job_dir, "activity.txt")
+        try:
+            with open(activity_file, "a", encoding="utf-8") as f:
+                f.write(raw_msg + "\n")
+                f.flush()
+        except Exception:
+            pass
 
 #  Standalone tes
 if __name__ == "__main__":

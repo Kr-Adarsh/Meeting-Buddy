@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Play, Loader2, Download, Clock, Mic, Square,
-  AlertCircle, MessageSquare, Bot, CheckCircle2, RotateCcw, X, Eye, LogOut
+  AlertCircle, MessageSquare, Bot, CheckCircle2, RotateCcw, X, Eye, LogOut, Sun, Moon
 } from 'lucide-react';
 import './App.css';
 import Login from './Login';
@@ -10,6 +10,12 @@ import ReactMarkdown from 'react-markdown';
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 function App() {
+  const [theme, setTheme] = useState('dark');
+  
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+  
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('mb_token'));
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('mb_user');
@@ -109,7 +115,7 @@ function App() {
 
     // Only poll if there's an active peek AND the job is NOT completed
     const targetJob = jobs.find(j => j.job_id === peekJobId);
-    const isLive = targetJob && targetJob.status !== 'completed' && targetJob.status !== 'failed';
+    const isLive = targetJob && targetJob.process_alive && !['completed', 'failed', 'stopped'].includes(targetJob.phase);
 
     if (peekJobId && isLive) {
       const getPeekStatus = async () => {
@@ -117,7 +123,7 @@ function App() {
           const sr = await authFetch(`/job-status/${peekJobId}`);
           if (!sr.ok) return;
           const sdata = await sr.json();
-          if (sdata.status === 'completed') {
+          if (['completed', 'failed', 'stopped'].includes(sdata.phase)) {
             // It finished while we were peeking! Need to fetch final static captions.
             const fr = await authFetch(`/download/${peekJobId}/captions`);
             if (fr.ok) {
@@ -340,6 +346,9 @@ function App() {
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{user.email}</span>
             </div>
             {user.picture && <img src={user.picture} alt="Avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)' }} />}
+            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="header-icon-btn" title="Toggle Theme" style={{ marginLeft: '12px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
             <button onClick={handleLogOut} className="header-icon-btn" title="Log Out" style={{ marginLeft: '8px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
               <LogOut size={20} />
             </button>
@@ -380,7 +389,7 @@ function App() {
               id="deploy-btn"
             >
               {loadingDeploy ? <Loader2 size={18} className="spinner" /> : <Play size={18} />}
-              <span>Deploy Bot</span>
+              <span>{loadingDeploy ? "Deploying Session..." : "Deploy Bot"}</span>
             </button>
           </form>
         </section>
@@ -398,7 +407,7 @@ function App() {
             {jobs.length === 0 && <p className="no-data">No meetings recorded yet.</p>}
 
             {jobs.map((job) => {
-              const isActive = job.status === 'joining' || job.status === 'pending' || job.status === 'recording';
+              const isActive = job.process_alive && !["stopped", "failed", "completed"].includes(job.phase);
               const info = parseJobInfo(job.job_id, job.duration_seconds);
               const isPeeking = peekJobId === job.job_id;
 
@@ -410,8 +419,8 @@ function App() {
                       <strong>{job.serialId || info.title}</strong>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginLeft: '8px' }}>{info.title}</span>
                     </div>
-                    <span className={`status-badge ${job.status}`}>
-                      {job.status.toUpperCase()}
+                    <span className={`status-badge ${job.phase}`}>
+                      {job.phase ? job.phase.toUpperCase() : "UNKNOWN"}
                     </span>
                   </div>
 
@@ -429,6 +438,12 @@ function App() {
                         {job.duration_seconds > 0 && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({fmt(job.duration_seconds)})</span>}
                       </div>
                     )}
+                    
+                    {isActive && job.latest_activity && (
+                      <div className="meet-activity" style={{ fontSize: '0.85rem', color: 'var(--primary)', marginTop: '8px', padding: '6px 10px', background: 'var(--background)', borderRadius: '4px', borderLeft: '2px solid var(--primary)' }}>
+                        ⚡ {job.latest_activity}
+                      </div>
+                    )}
 
                     <div className="meet-actions">
                       {isActive && (
@@ -443,7 +458,7 @@ function App() {
                         </button>
                       )}
 
-                      {!isActive && job.status === 'completed' && (
+                      {!isActive && job.phase === 'completed' && (
                         <>
                           {job.has_audio && (
                             <button onClick={() => download(job.job_id, 'audio')} className="raw-download-btn">Audio</button>

@@ -66,7 +66,7 @@ class MeetRequest(BaseModel):
 
 class JobResponse(BaseModel):
     job_id: str
-    status: str
+    phase: str
     message: str
 
 
@@ -124,7 +124,7 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, us
 
     jobs_db[job_id] = {
         "job_id": job_id,
-        "status": "running",
+        "phase": "pending",
         "url": request.url,
         "process": process,
         "result": None,
@@ -142,7 +142,7 @@ async def deploy_bot(request: MeetRequest, background_tasks: BackgroundTasks, us
     
 
     return JobResponse(
-        job_id=job_id, status="running", message="Meeting Buddy is deploying!"
+        job_id=job_id, phase="joining", message="Meeting Buddy is deploying!"
     )
 
 
@@ -166,16 +166,26 @@ async def get_job_status(job_id: str, user_email: str = Depends(verify_token)):
 
     job = dict(jobs_db[job_id])
     process = job.get("process")
-
+    
     # Mirror process state
     if process:
-        if process.poll() is None:
-            job["status"] = "running"
-        elif job.get("status") in ["running", "pending"]:
-            job["status"] = "finished"
-    
-    if job["status"] in ["finished", "failed", "stopped"]:
-        job.pop("process", None)
+        job["process_alive"] = process.poll() is None
+        if not job["process_alive"] and job.get("phase") in ["joining", "recording", "pending"]:
+            job["phase"] = "failed"
+    else:
+        job["process_alive"] = False
+
+    # Extract Latest Activity Log securely!
+    job["latest_activity"] = ""
+    activity_file = os.path.join("recordings", job_id, "activity.txt")
+    if os.path.exists(activity_file):
+        try:
+            with open(activity_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                if lines: job["latest_activity"] = lines[-1].strip()
+        except Exception:
+            pass
+
     # Stream live captions from disk since worker is fully isolated
     job["live_captions"] = []
     job["captions_count"] = 0
@@ -211,21 +221,34 @@ async def get_all_jobs(user_email: str = Depends(verify_token)):
         job_copy = {
             "job_id": jid,
             "url": db_meta["url"],
-            "status": "completed", 
+            "phase": "completed", 
+            "process_alive": False,
             "duration_seconds": 0,
             "has_audio": False,
             "has_captions": False,
             "has_summary": False,
             "summary_failed": False,
-            "captions_count": 0
+            "captions_count": 0,
+            "latest_activity": ""
         }
         
+        # Read the activity buffer generically globally
+        activity_file = os.path.join(rec_dir, jid, "activity.txt")
+        if os.path.exists(activity_file):
+            try:
+                with open(activity_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    if lines: job_copy["latest_activity"] = lines[-1].strip()
+            except Exception: pass
+
         # Fold in live memory state if active
         if jid in jobs_db:
             mem_job = jobs_db[jid]
             process = mem_job.get("process")
-            if process and process.poll() is None:
-                job_copy["status"] = "running"
+            job_copy["process_alive"] = process is not None and process.poll() is None
+            
+            if job_copy["process_alive"]:
+                job_copy["phase"] = mem_job.get("phase", "joining")
                 cap_path = os.path.join(rec_dir, jid, "captions.txt")
                 if os.path.exists(cap_path):
                     with open(cap_path, "r", encoding="utf-8") as f:
@@ -233,7 +256,7 @@ async def get_all_jobs(user_email: str = Depends(verify_token)):
             else:
                 res = mem_job.get("result", {})
                 if res:
-                    job_copy["status"] = mem_job.get("status", "completed")
+                    job_copy["phase"] = mem_job.get("phase", "completed")
                     job_copy["duration_seconds"] = res.get("duration_seconds", 0)
         else:
             # Fold in disk metadata.json if concluded
@@ -244,12 +267,12 @@ async def get_all_jobs(user_email: str = Depends(verify_token)):
                         meta = json.load(f)
                         job_copy["duration_seconds"] = meta.get("duration_seconds", 0)
                         job_copy["captions_count"] = meta.get("captions_count", 0)
-                        job_copy["status"] = meta.get("status", "completed")
+                        job_copy["phase"] = meta.get("phase", "completed")
                 except Exception: pass
             else:
                 # If it crashed instantly before writing metadata, mark failed gracefully
                 if not os.path.exists(os.path.join(rec_dir, jid)):
-                    job_copy["status"] = "failed"
+                    job_copy["phase"] = "failed"
                     
         # Verify physical disk payloads
         folder = os.path.join(rec_dir, jid)
@@ -279,18 +302,18 @@ async def delete_failed_jobs(user_email: str = Depends(verify_token)):
         for jid in user_job_ids:
             # We ONLY delete logically aborted/failed ones that don't have good data
             meta_path = os.path.join(rec_dir, jid, "metadata.json")
-            status = "failed"
+            phase = "failed"
             if os.path.exists(meta_path):
                 try:
                     with open(meta_path, "r") as f:
                         meta = json.load(f)
-                        status = meta.get("status", "completed")
+                        phase = meta.get("phase", "completed")
                 except Exception: pass
             else:
                 if jid in jobs_db:
-                    status = jobs_db[jid].get("status", "failed")
+                    phase = jobs_db[jid].get("phase", "failed")
             
-            if status == "failed":
+            if phase == "failed":
                 conn.execute("DELETE FROM meetings WHERE job_id = ?", (jid,))
                 if jid in jobs_db: del jobs_db[jid]
                 deleted_count += 1
@@ -315,7 +338,8 @@ async def stop_bot(job_id: str, user_email: str = Depends(verify_token)):
 
     if process and process.poll() is None:
         process.terminate()
-        job["status"] = "stopped"
+        job["phase"] = "stopped"
+        job["process_alive"] = False
         return {"message": "Bot stopped", "job_id": job_id}
 
     return {"message": "Bot already finished", "job_id": job_id}
