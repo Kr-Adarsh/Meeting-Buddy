@@ -159,13 +159,13 @@ class MeetBot:
             self.pulse_socket = os.path.join(self.pulse_dir, "pulse.sock")
 
             # Native command forcefully loading absolute minimum modules without probing hardware
-            cmd = [
-                "pulseaudio", "-n",
-                f"--load=module-native-protocol-unix auth-anonymous=1 socket={self.pulse_socket}",
-                f"--load=module-null-sink sink_name={self.sink_name}",
-                "--exit-idle-time=-1",
-                "--daemonize=false"
-            ]
+            cmd_str = (
+                f'pulseaudio -n '
+                f'--load="module-native-protocol-unix auth-anonymous=1 socket={self.pulse_socket}" '
+                f'--load="module-null-sink sink_name={self.sink_name}" '
+                f'--exit-idle-time=-1 '
+                f'--daemonize=false'
+            )
 
             my_env = os.environ.copy()
             my_env["PULSE_CONFIG_PATH"] = self.pulse_dir
@@ -173,7 +173,7 @@ class MeetBot:
             my_env["XDG_RUNTIME_DIR"] = self.pulse_dir
 
             self.pulse_process = subprocess.Popen(
-                cmd, env=my_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                cmd_str, env=my_env, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
 
             # Polling for Socket presence
