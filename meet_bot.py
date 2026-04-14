@@ -152,41 +152,24 @@ class MeetBot:
 
     def _create_null_sink(self):
         try:
-            self.pulse_dir = os.path.join(DEBUG_DIR, f"pulse_{self.job_id}")
-            os.makedirs(self.pulse_dir, exist_ok=True)
-            self.pulse_socket = os.path.join(self.pulse_dir, "pulse.sock")
+            result = subprocess.run([
+                "pactl", "load-module",
+                "module-null-sink",
+                f"sink_name={self.sink_name}"
+            ], capture_output=True, text=True)
 
-            cmd = [
-                "pulseaudio", "-n",
-                f'--load=module-native-protocol-unix auth-anonymous=1 socket={self.pulse_socket}',
-                f'--load=module-null-sink sink_name={self.sink_name}',
-                "--exit-idle-time=-1",
-                "--daemonize=false",
-            ]
+            if result.returncode != 0:
+                self._log(f"Failed to create sink: {result.stderr}")
+                return False
 
-            my_env = os.environ.copy()
-            my_env["PULSE_RUNTIME_PATH"] = self.pulse_dir
-            my_env["PULSE_STATE_PATH"]   = self.pulse_dir
-            my_env["XDG_RUNTIME_DIR"]    = self.pulse_dir
-
-            for _ in range(30):
-                if os.path.exists(self.pulse_socket):
-                    self._log("Isolated Audio Daemon securely mounted to UNIX socket!")
-                    # Export into Python's native environment so Chrome & FFmpeg inherit it flawlessly
-                    os.environ["PULSE_SERVER"] = f"unix:{self.pulse_socket}"
-                    os.environ["PULSE_SINK"] = self.sink_name
-                    
-                    # Faking this ID ensures FFmpeg correctly builds the "{self.sink_name}.monitor" target natively
-                    self.sink_module_id = True
-                    return True
-                time.sleep(0.1)
-
-            self._log("⚠️ Isolated PulseAudio Daemon failed to map socket.")
-            self.pulse_process.terminate()
+            self._log(f"Created sink: {self.sink_name}")
+            os.environ["PULSE_SINK"] = self.sink_name
+            self.sink_module_id = True
+            return True
 
         except Exception as e:
-            self._log(f"⚠️ Could not create isolated sink: {e}")
-        return False
+            self._log(f"Sink creation error: {e}")
+            return False
 
     def _destroy_null_sink(self):
         if hasattr(self, 'pulse_process') and self.pulse_process.poll() is None:
